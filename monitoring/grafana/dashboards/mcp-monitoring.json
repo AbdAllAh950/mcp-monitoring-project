@@ -1,0 +1,206 @@
+{
+  "title": "MCP Monitoring - Kafka, Spark & HDFS",
+  "uid": "mcp-main-dashboard",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Kafka Consumer Lag",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "kafka_consumer_lag",
+          "legendFormat": "{{topic}} - {{consumer_group}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5000 },
+              { "color": "red", "value": 15000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Kafka Broker Status",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        { "expr": "kafka_broker_up", "legendFormat": "Broker Up" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Kafka Messages Per Second",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(kafka_messages_in_total[1m])", "legendFormat": "Messages/s - {{topic}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Spark Active Tasks",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 0, "y": 8, "w": 6, "h": 4 },
+      "targets": [
+        { "expr": "spark_active_tasks", "legendFormat": "Active Tasks" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 3 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Spark Memory Usage %",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 6, "y": 8, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "(spark_executor_memory_used_bytes / spark_executor_memory_total_bytes) * 100",
+          "legendFormat": "Memory %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Spark Failed Jobs",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 0, "y": 12, "w": 6, "h": 4 },
+      "targets": [
+        { "expr": "spark_job_failed_total", "legendFormat": "Failed Jobs" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "HDFS Disk Usage %",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 12, "y": 8, "w": 6, "h": 8 },
+      "targets": [
+        { "expr": "hdfs_disk_used_percent", "legendFormat": "HDFS Disk %" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "HDFS DataNode Status",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 18, "y": 8, "w": 6, "h": 4 },
+      "targets": [
+        { "expr": "hdfs_datanode_up", "legendFormat": "DataNode Up" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Active Alerts",
+      "type": "table",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 6 },
+      "targets": [
+        { "expr": "ALERTS{alertstate=\"firing\"}", "legendFormat": "{{alertname}} - {{severity}}" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Host CPU Usage",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "CPU Usage %"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Host Memory Usage",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "legendFormat": "Memory Usage %"
+        }
+      ]
+    }
+  ]
+}

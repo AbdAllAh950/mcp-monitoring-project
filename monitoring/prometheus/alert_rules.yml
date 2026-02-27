@@ -1,0 +1,161 @@
+groups:
+  - name: kafka_alerts
+    interval: 30s
+    rules:
+
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumer_lag > 5000
+        for: 1m
+        labels:
+          severity: warning
+          service: kafka
+          action: restart_consumer
+        annotations:
+          summary: "Kafka consumer lag is high on {{ $labels.topic }}"
+          description: "Consumer group {{ $labels.consumer_group }} has lag {{ $value }} on topic {{ $labels.topic }}"
+          remediation: "Restart the consumer group or scale consumers"
+
+      - alert: KafkaConsumerLagCritical
+        expr: kafka_consumer_lag > 15000
+        for: 2m
+        labels:
+          severity: critical
+          service: kafka
+          action: scale_consumers
+        annotations:
+          summary: "CRITICAL: Kafka consumer lag is very high"
+          description: "Consumer lag {{ $value }} exceeds critical threshold of 15000"
+          remediation: "Immediately scale consumer instances"
+
+      - alert: KafkaBrokerDown
+        expr: kafka_broker_up == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: kafka
+          action: restart_broker
+        annotations:
+          summary: "Kafka broker is DOWN"
+          description: "Kafka broker has been down for 30 seconds"
+          remediation: "Restart the Kafka broker service"
+
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_under_replicated_partitions > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: kafka
+          action: check_replication
+        annotations:
+          summary: "Kafka has under-replicated partitions"
+          description: "{{ $value }} partitions are under-replicated"
+          remediation: "Check broker connectivity and replication factor"
+
+  - name: spark_alerts
+    interval: 30s
+    rules:
+
+      - alert: SparkJobFailed
+        expr: spark_job_failed_total > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: spark
+          action: retry_job
+        annotations:
+          summary: "Spark job failed"
+          description: "{{ $value }} Spark jobs have failed"
+          remediation: "Inspect Spark logs and retry the failed job"
+
+      - alert: SparkExecutorMemoryHigh
+        expr: spark_executor_memory_used_bytes / spark_executor_memory_total_bytes > 0.85
+        for: 2m
+        labels:
+          severity: warning
+          service: spark
+          action: increase_memory
+        annotations:
+          summary: "Spark executor memory usage is high"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+          remediation: "Increase executor memory or optimize job"
+
+      - alert: SparkActiveTasksLow
+        expr: spark_active_tasks < 1
+        for: 3m
+        labels:
+          severity: warning
+          service: spark
+          action: check_spark_cluster
+        annotations:
+          summary: "Spark has no active tasks (possible stall)"
+          description: "No active Spark tasks for 3 minutes"
+          remediation: "Check Spark master and worker connectivity"
+
+  - name: hdfs_alerts
+    interval: 30s
+    rules:
+
+      - alert: HDFSDiskSpaceHigh
+        expr: hdfs_disk_used_percent > 80
+        for: 2m
+        labels:
+          severity: warning
+          service: hdfs
+          action: cleanup_hdfs
+        annotations:
+          summary: "HDFS disk usage is high"
+          description: "HDFS disk usage is {{ $value }}%"
+          remediation: "Clean up old files or expand HDFS storage"
+
+      - alert: HDFSDataNodeDown
+        expr: hdfs_datanode_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: hdfs
+          action: restart_datanode
+        annotations:
+          summary: "HDFS DataNode is DOWN"
+          description: "An HDFS DataNode has been unreachable for 1 minute"
+          remediation: "Restart the DataNode service"
+
+      - alert: HDFSReplicationLow
+        expr: hdfs_blocks_under_replicated > 100
+        for: 2m
+        labels:
+          severity: warning
+          service: hdfs
+          action: check_replication
+        annotations:
+          summary: "HDFS has many under-replicated blocks"
+          description: "{{ $value }} blocks are under-replicated"
+          remediation: "Add DataNodes or wait for replication to recover"
+
+  - name: system_alerts
+    interval: 15s
+    rules:
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 2m
+        labels:
+          severity: warning
+          service: system
+          action: investigate_cpu
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80%"
+          remediation: "Identify and optimize high-CPU processes"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 2m
+        labels:
+          severity: warning
+          service: system
+          action: check_memory
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85%"
+          remediation: "Check for memory leaks or increase available RAM"
+
