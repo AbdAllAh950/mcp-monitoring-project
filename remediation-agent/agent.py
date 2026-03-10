@@ -5,6 +5,16 @@ Run this separately for interactive CLI demo.
 """
 import asyncio
 import httpx
+import os
+from pathlib import Path
+
+# Load .env file manually
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    for _line in _env_path.read_text().splitlines():
+        if "=" in _line and not _line.startswith("#"):
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 import json
 from datetime import datetime
 from rich.console import Console
@@ -137,6 +147,7 @@ async def interactive_menu():
         console.print("  [cyan]4[/cyan] - Query a Prometheus metric")
         console.print("  [cyan]5[/cyan] - Manually trigger remediation")
         console.print("  [cyan]6[/cyan] - Live monitor (auto-refresh every 10s)")
+        console.print("  [cyan]7[/cyan] - AI diagnose active alerts (powered by LLM)")
         console.print("  [cyan]q[/cyan] - Quit")
         
         choice = input("\nEnter choice: ").strip().lower()
@@ -186,9 +197,98 @@ async def interactive_menu():
             except KeyboardInterrupt:
                 console.print("\n[yellow]Stopped live monitor.[/yellow]")
         
+        
+        elif choice == "7":
+            console.print("\n[bold cyan]Fetching active alerts and runbooks...[/bold cyan]")
+            try:
+                alerts_resp = httpx.get(f"{MCP_URL}/tools/get_active_alerts", timeout=10)
+                alerts = alerts_resp.json().get("alerts", [])
+                runbooks_resp = httpx.get(f"{MCP_URL}/tools/list_runbooks", timeout=10)
+                runbook_names = runbooks_resp.json().get("runbooks", [])
+
+                runbooks = {}
+                for name in runbook_names:
+                    rb_resp = httpx.get(f"{MCP_URL}/tools/get_runbook", params={"alert_name": name}, timeout=10)
+                    rb_data = rb_resp.json()
+                    if rb_data.get("found"):
+                        runbooks[name] = rb_data["runbook"]
+
+                if not alerts:
+                    console.print("[green]No active alerts right now — cluster looks healthy![/green]")
+                else:
+                    console.print(f"[yellow]Diagnosing {len(alerts)} active alert(s) with AI...[/yellow]")
+                    diagnosis = ai_diagnose_alerts(alerts, runbooks)
+                    console.print(Panel(
+                        diagnosis,
+                        title="[bold red]AI Diagnosis & Recommendation[/bold red]",
+                        border_style="red",
+                        padding=(1, 2)
+                    ))
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
+
         elif choice == "q":
             console.print("[dim]Goodbye![/dim]")
             break
+
+
+def ai_diagnose_alerts(alerts: list, runbooks: dict) -> str:
+    """Use LLM to diagnose active alerts and recommend remediation"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(
+            api_key=os.environ.get("OPENAI_API_KEY", ""),
+            base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+        )
+        model = os.environ.get("OPENAI_MODEL", "qwen/qwen3-8b")
+
+        if not alerts:
+            return "No active alerts to diagnose."
+
+        alert_lines = []
+        for a in alerts:
+            alert_lines.append(
+                f"- Alert: {a.get('alert_name','?')} | Service: {a.get('service','?')} | "
+                f"Severity: {a.get('severity','?')} | Status: {a.get('status','?')}"
+            )
+        alert_summary = "\n".join(alert_lines)
+
+        runbook_lines = []
+        for a in alerts:
+            rb = runbooks.get(a.get("alert_name", ""))
+            if rb:
+                symptom = rb.get("symptom", "")
+                actions = rb.get("remediation_actions", [])
+                action_str = ", ".join([x.get("action","") for x in actions])
+                runbook_lines.append(f"- {a.get('alert_name')}: {symptom} → actions: {action_str}")
+
+        runbook_context = "\n".join(runbook_lines) if runbook_lines else "No runbooks matched."
+
+        prompt = f"""You are an expert SRE engineer monitoring a big data cluster with Kafka, Spark, and HDFS.
+
+Currently firing alerts:
+{alert_summary}
+
+Available runbooks for these alerts:
+{runbook_context}
+
+Based on this information:
+1. Identify the most critical issue
+2. Explain the likely root cause in one sentence
+3. Recommend the exact remediation action to take
+4. Estimate the business impact if not resolved
+
+Be concise and direct. Max 5 sentences total."""
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300
+        )
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        return f"AI diagnosis unavailable: {str(e)}"
 
 if __name__ == "__main__":
     asyncio.run(interactive_menu())
