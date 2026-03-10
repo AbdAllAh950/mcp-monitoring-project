@@ -386,16 +386,24 @@ Watch the live monitor: HDFS flips 🟢 HEALTHY → 🔴 CRITICAL, remediation r
 
 ---
 
-## 👤 Author
+---
+
+## Author
 
 **Abdallah** — [@AbdAllAh950](https://github.com/AbdAllAh950)
 
 ---
 
-<div align="center">
+## Course
 
-**Built with ❤️ using Prometheus · Grafana · FastAPI · Docker**
+This project was developed as part of the **Big Data & Machine Learning** program at **ITMO University** (Semester 3).
 
-⭐ Star this repo if you found it useful!
+> Project 3 — Monitoring and Auto-Diagnostics with Prometheus + Grafana via MCP Server and Remediation Agent
 
-</div>
+---
+
+## License
+
+This project is for educational purposes as part of the **ITMO University Big Data & ML curriculum**.
+
+This repository is intended as a reference and learning resource.
