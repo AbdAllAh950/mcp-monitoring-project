@@ -1,0 +1,131 @@
+KafkaConsumerLagHigh:
+  symptom: "Kafka consumer lag exceeds 5000 messages"
+  diagnosis_steps:
+    - "Check kafka_consumer_lag metric per topic and consumer group"
+    - "Verify consumer group is still running"
+    - "Check for downstream bottlenecks slowing consumption"
+  remediation_actions:
+    - action: "restart_consumer"
+      description: "Restart the affected consumer group"
+      safety: "SAFE - brief rebalance, no data loss"
+      component: "kafka-exporter"
+
+KafkaConsumerLagCritical:
+  symptom: "Kafka consumer lag exceeds 15000 messages"
+  diagnosis_steps:
+    - "Check kafka_consumer_lag metric - identify worst topic"
+    - "Check if consumer group is alive"
+    - "Check producer rate vs consumer rate"
+  remediation_actions:
+    - action: "scale_consumers"
+      description: "Scale consumer instances horizontally"
+      safety: "SAFE - adds capacity, no data loss"
+      component: "kafka-exporter"
+
+KafkaBrokerDown:
+  symptom: "Kafka broker is unreachable"
+  diagnosis_steps:
+    - "Check kafka_broker_up == 0"
+    - "Check container logs: docker logs kafka-exporter"
+    - "Verify network connectivity"
+  remediation_actions:
+    - action: "restart_broker"
+      description: "Restart the Kafka broker container via Docker API"
+      safety: "SAFE - brief downtime, data preserved"
+      component: "kafka-exporter"
+
+SparkJobFailed:
+  symptom: "One or more Spark jobs have failed"
+  diagnosis_steps:
+    - "Check spark_job_failed_total counter"
+    - "Review Spark executor logs for OOM or timeout errors"
+    - "Check last checkpoint location"
+  remediation_actions:
+    - action: "retry_job"
+      description: "Retry the failed job from last checkpoint"
+      safety: "SAFE - idempotent retry"
+      component: "spark-exporter"
+
+SparkExecutorMemoryHigh:
+  symptom: "Spark executor memory usage above 85%"
+  diagnosis_steps:
+    - "Check spark_executor_memory_used_bytes / spark_executor_memory_total_bytes"
+    - "Identify memory-heavy stages"
+    - "Check for data skew"
+  remediation_actions:
+    - action: "increase_memory"
+      description: "Increase executor memory allocation"
+      safety: "SAFE - configuration change only"
+      component: "spark-exporter"
+
+SparkActiveTasksLow:
+  symptom: "No active Spark tasks for 3 minutes"
+  diagnosis_steps:
+    - "Check spark_active_tasks metric"
+    - "Verify Spark master is reachable"
+    - "Check for stalled jobs in queue"
+  remediation_actions:
+    - action: "check_spark_cluster"
+      description: "Restart Spark exporter and verify cluster"
+      safety: "SAFE - diagnostic restart"
+      component: "spark-exporter"
+
+HDFSDiskSpaceHigh:
+  symptom: "HDFS disk usage above 80%"
+  diagnosis_steps:
+    - "Check hdfs_disk_used_percent metric"
+    - "Identify largest directories in HDFS"
+    - "Check for old temporary and checkpoint files"
+  remediation_actions:
+    - action: "cleanup_hdfs"
+      description: "Remove old temp files and archives older than 30 days"
+      safety: "SAFE - only removes expired temporary data"
+      component: "hdfs-exporter"
+
+HDFSDataNodeDown:
+  symptom: "HDFS DataNode is unreachable"
+  diagnosis_steps:
+    - "Check hdfs_datanode_up == 0"
+    - "Check container logs: docker logs hdfs-exporter"
+    - "Verify DataNode registration with NameNode"
+  remediation_actions:
+    - action: "restart_datanode"
+      description: "Restart the HDFS DataNode via Docker API"
+      safety: "SAFE - replication handles brief downtime"
+      component: "hdfs-exporter"
+
+HDFSReplicationLow:
+  symptom: "More than 100 HDFS blocks are under-replicated"
+  diagnosis_steps:
+    - "Check hdfs_blocks_under_replicated metric"
+    - "Verify all DataNodes are reachable"
+    - "Check available disk space on DataNodes"
+  remediation_actions:
+    - action: "check_replication"
+      description: "Trigger replication recovery and check DataNode health"
+      safety: "SAFE - read-only diagnostic + replication trigger"
+      component: "hdfs-exporter"
+
+HighCPUUsage:
+  symptom: "Host CPU usage above 80% for 2 minutes"
+  diagnosis_steps:
+    - "Check node_cpu_seconds_total metric"
+    - "Identify top CPU-consuming containers via cAdvisor"
+    - "Check for runaway processes"
+  remediation_actions:
+    - action: "investigate_cpu"
+      description: "Collect top-process snapshot and notify operator"
+      safety: "SAFE - read-only diagnostic"
+      component: "node-exporter"
+
+HighMemoryUsage:
+  symptom: "Host memory usage above 85% for 2 minutes"
+  diagnosis_steps:
+    - "Check node_memory_MemAvailable_bytes metric"
+    - "Identify memory-heavy containers"
+    - "Check for memory leaks in long-running processes"
+  remediation_actions:
+    - action: "check_memory"
+      description: "Collect memory snapshot and identify leak candidates"
+      safety: "SAFE - read-only diagnostic"
+      component: "node-exporter"
