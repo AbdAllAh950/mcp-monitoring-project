@@ -12,9 +12,10 @@ from pathlib import Path
 _env_path = Path(__file__).parent / ".env"
 if _env_path.exists():
     for _line in _env_path.read_text().splitlines():
-        if "=" in _line and not _line.startswith("#"):
+        _line = _line.strip()
+        if _line and "=" in _line and not _line.startswith("#"):
             _k, _v = _line.split("=", 1)
-            os.environ.setdefault(_k.strip(), _v.strip())
+            os.environ[_k.strip()] = _v.strip()
 import json
 from datetime import datetime
 from rich.console import Console
@@ -148,6 +149,7 @@ async def interactive_menu():
         console.print("  [cyan]5[/cyan] - Manually trigger remediation")
         console.print("  [cyan]6[/cyan] - Live monitor (auto-refresh every 10s)")
         console.print("  [cyan]7[/cyan] - AI diagnose active alerts (powered by LLM)")
+        console.print("  [cyan]8[/cyan] - 💬 Chat with AI about your cluster (natural language)")
         console.print("  [cyan]q[/cyan] - Quit")
         
         choice = input("\nEnter choice: ").strip().lower()
@@ -227,10 +229,121 @@ async def interactive_menu():
             except Exception as e:
                 console.print(f"[red]Error: {e}[/red]")
 
+
+        elif choice == "8":
+            console.print("\n[bold cyan]💬 AI Chat Mode — type your question, 'quit' to exit[/bold cyan]")
+            console.print("[dim]Examples: 'What alerts are firing?', 'Fix the kafka issue', 'Show me spark memory usage'[/dim]\n")
+            conversation_history = []
+            while True:
+                try:
+                    user_input = input("You: ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    break
+                if not user_input or user_input.lower() in ["quit", "exit", "q"]:
+                    console.print("[dim]Exiting chat mode...[/dim]")
+                    break
+                console.print("[yellow]🤖 AI is thinking...[/yellow]")
+                reply, conversation_history = ai_chat(user_input, conversation_history)
+                from rich.markdown import Markdown
+                console.print(Panel(
+                    Markdown(reply),
+                    title="[bold green]🤖 AI Assistant[/bold green]",
+                    border_style="green",
+                    padding=(1, 2)
+                ))
+                console.print()
+
         elif choice == "q":
             console.print("[dim]Goodbye![/dim]")
             break
 
+
+
+def ai_chat(user_message: str, conversation_history: list) -> tuple[str, list]:
+    """Full conversational AI that uses MCP tools to answer questions"""
+    try:
+        from openai import OpenAI
+        import json
+
+        client = OpenAI(
+            api_key=os.environ.get("OPENAI_API_KEY", ""),
+            base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+        )
+        model = os.environ.get("OPENAI_MODEL", "qwen/qwen3-8b")
+
+        # Fetch live context from MCP server
+        try:
+            alerts = httpx.get(f"{MCP_URL}/tools/get_active_alerts", timeout=5).json().get("alerts", [])
+            health = httpx.get(f"{MCP_URL}/tools/get_service_health", timeout=5).json()
+            history = httpx.get(f"{MCP_URL}/tools/get_remediation_history", timeout=5).json().get("history", [])[-5:]
+            runbooks = httpx.get(f"{MCP_URL}/tools/list_runbooks", timeout=5).json().get("runbooks", [])
+        except Exception as e:
+            alerts, health, history, runbooks = [], {}, [], []
+
+        system_prompt = f"""You are an expert SRE AI assistant for a big data platform monitoring system.
+You have access to real-time data from the MCP monitoring server.
+
+CURRENT SYSTEM STATE:
+- Active Alerts ({len(alerts)}): {json.dumps([(a.get("alert_name") or a.get("name","?")) + " [" + a.get("severity","?") + "]" for a in alerts]) if alerts else "None - all healthy"}
+- Service Health: {json.dumps(health.get("services", {}), indent=None)}
+- Recent Remediations (last 5): {json.dumps([h.get("alert_name") + " -> " + h.get("action") + " [" + ("✅" if h.get("success") else "❌") + "]" for h in history]) if history else "None yet"}
+- Available Runbooks: {", ".join(runbooks)}
+
+AVAILABLE MCP TOOLS YOU CAN CALL:
+- GET /tools/get_active_alerts → lists currently firing alerts
+- GET /tools/get_service_health → kafka/spark/hdfs health status
+- GET /tools/get_remediation_history → past remediation actions
+- GET /tools/get_runbook?alert_name=X → get runbook for specific alert
+- POST /tools/trigger_remediation {{alert_name, service, action}} → execute remediation
+- POST /tools/query_prometheus {{query: "promql"}} → query metrics directly
+
+INSTRUCTIONS:
+- Answer concisely and directly based on the real-time data above
+- When the user asks to fix/remediate something, call trigger_remediation and report the result
+- When asked about metrics, call query_prometheus with the appropriate PromQL
+- Always cite which tool data you used in your answer
+- Be actionable: if there are alerts, always suggest the next step
+- Format responses cleanly - use bullet points for lists"""
+
+        # Build messages with history
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(conversation_history[-6:])  # keep last 3 exchanges
+        messages.append({"role": "user", "content": user_message})
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=400
+        )
+
+        ai_reply = response.choices[0].message.content.strip()
+
+        # Check if AI wants to trigger remediation
+        if any(word in user_message.lower() for word in ["fix", "remediate", "restart", "resolve", "trigger"]):
+            if alerts:
+                alert = alerts[0]
+                try:
+                    result = httpx.post(
+                        f"{MCP_URL}/tools/trigger_remediation",
+                        json={
+                            "alert_name": alert.get("alert_name") or alert.get("name"),
+                            "service": alert.get("service"),
+                            "action": alert.get("action")
+                        },
+                        timeout=15
+                    ).json()
+                    ai_reply += f"\n\n✅ **Action taken**: Triggered `{alert.get('action')}` for `{alert.get('alert_name')}`. Result: {result.get('status', 'executed')}"
+                except Exception as e:
+                    ai_reply += f"\n\n⚠️ Could not trigger remediation: {str(e)}"
+
+        # Update conversation history
+        conversation_history.append({"role": "user", "content": user_message})
+        conversation_history.append({"role": "assistant", "content": ai_reply})
+
+        return ai_reply, conversation_history
+
+    except Exception as e:
+        return f"AI chat unavailable: {str(e)}", conversation_history
 
 def ai_diagnose_alerts(alerts: list, runbooks: dict) -> str:
     """Use LLM to diagnose active alerts and recommend remediation"""
